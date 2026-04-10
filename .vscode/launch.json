@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Astro dev bunx",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "bunx --bun astro dev"
+    }
+  ]
+}
