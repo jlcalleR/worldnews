@@ -450,6 +450,7 @@
 <script>
   // Tooltip Logic
   const tooltip = document.getElementById('map-tooltip');
+  const mapWrapper = document.querySelector('.map-wrapper');
   const regionNames = new Intl.DisplayNames(['es'], {type: 'region'});
 
   document.querySelectorAll('[cc]').forEach(country => {
@@ -459,21 +460,22 @@
       try { 
         name = regionNames.of(code); 
       } catch(err) {
-        // Fallback for invalid codes if any
       }
       
       tooltip.textContent = name;
       tooltip.style.display = 'block';
       
       const tooltipRect = tooltip.getBoundingClientRect();
-      let x = e.clientX + 15;
-      let y = e.clientY + 15;
+      const rect = mapWrapper.getBoundingClientRect();
       
-      if (x + tooltipRect.width > window.innerWidth) {
-        x = e.clientX - tooltipRect.width - 15;
+      let x = (e.clientX - rect.left) + 15;
+      let y = (e.clientY - rect.top) + 15;
+      
+      if (e.clientX + tooltipRect.width + 15 > window.innerWidth) {
+        x = (e.clientX - rect.left) - tooltipRect.width - 15;
       }
-      if (y + tooltipRect.height > window.innerHeight) {
-        y = e.clientY - tooltipRect.height - 15;
+      if (e.clientY + tooltipRect.height + 15 > window.innerHeight) {
+        y = (e.clientY - rect.top) - tooltipRect.height - 15;
       }
       
       tooltip.style.left = x + 'px';
@@ -485,100 +487,126 @@
     });
   });
 
-  // Zoom and Pan Logic
-  const mapWrapper = document.querySelector('.map-wrapper');
+  // Zoom and Pan Logic via viewBox
   const svg = document.querySelector('.world-map');
   
-  svg.style.transformOrigin = '0 0';
+  const initialVbX = 9;
+  const initialVbY = 3;
+  const initialVbW = 940;
+  const initialVbH = 530;
   
-  let scale = 1;
-  let translateX = 0;
-  let translateY = 0;
+  let vbX = initialVbX;
+  let vbY = initialVbY;
+  let vbW = initialVbW;
+  let vbH = initialVbH;
+  
   let isDragging = false;
-  let startX, startY;
-  
-  const updateTransform = () => {
-    scale = Math.max(0.5, Math.min(scale, 10)); // bounds for scale
-    svg.style.transform = \`translate(\${translateX}px, \${translateY}px) scale(\${scale})\`;
+  let startClientX, startClientY;
+  let startVbX, startVbY;
+
+  const updateViewBox = () => {
+    if(vbW > initialVbW * 1.5) {
+      vbW = initialVbW * 1.5;
+      vbH = initialVbH * 1.5;
+    }
+    if(vbW < 50) { 
+      const ratio = vbW / 50;
+      vbW = 50;
+      vbH /= ratio;
+    }
+    svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
   };
 
-  document.getElementById('zoom-in').addEventListener('click', () => {
-    const rect = mapWrapper.getBoundingClientRect();
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
+  const zoomFactorConst = 1.3;
 
-    const zoomFactor = 1.3;
-    translateX = centerX - (centerX - translateX) * zoomFactor;
-    translateY = centerY - (centerY - translateY) * zoomFactor;
-    scale *= zoomFactor;
-    
-    updateTransform();
+  document.getElementById('zoom-in').addEventListener('click', () => {
+    const cx = vbX + vbW / 2;
+    const cy = vbY + vbH / 2;
+    vbW /= zoomFactorConst;
+    vbH /= zoomFactorConst;
+    vbX = cx - vbW / 2;
+    vbY = cy - vbH / 2;
+    updateViewBox();
   });
   
   document.getElementById('zoom-out').addEventListener('click', () => {
-    const rect = mapWrapper.getBoundingClientRect();
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-
-    const zoomFactor = 1 / 1.3;
-    translateX = centerX - (centerX - translateX) * zoomFactor;
-    translateY = centerY - (centerY - translateY) * zoomFactor;
-    scale *= zoomFactor;
-    
-    updateTransform();
+    const cx = vbX + vbW / 2;
+    const cy = vbY + vbH / 2;
+    vbW *= zoomFactorConst;
+    vbH *= zoomFactorConst;
+    vbX = cx - vbW / 2;
+    vbY = cy - vbH / 2;
+    updateViewBox();
   });
 
   document.getElementById('zoom-reset').addEventListener('click', () => {
-    scale = 1;
-    translateX = 0;
-    translateY = 0;
-    updateTransform();
+    vbX = initialVbX;
+    vbY = initialVbY;
+    vbW = initialVbW;
+    vbH = initialVbH;
+    updateViewBox();
   });
 
   mapWrapper.addEventListener('wheel', (e) => {
     e.preventDefault(); 
     
-    const zoomFactor = 1.1;
     const direction = e.deltaY < 0 ? 1 : -1;
-    const factor = Math.pow(zoomFactor, direction);
+    const factor = Math.pow(1.1, direction);
     
-    const rect = mapWrapper.getBoundingClientRect();
+    const rect = svg.getBoundingClientRect();
+    const ratioX = vbW / rect.width;
+    const ratioY = vbH / rect.height;
+    
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-
-    translateX = mouseX - (mouseX - translateX) * factor;
-    translateY = mouseY - (mouseY - translateY) * factor;
-    scale *= factor;
     
-    updateTransform();
+    const svgMouseX = vbX + mouseX * ratioX;
+    const svgMouseY = vbY + mouseY * ratioY;
+
+    const newW = vbW / factor;
+    const newH = vbH / factor;
+    
+    vbX = svgMouseX - (svgMouseX - vbX) / factor;
+    vbY = svgMouseY - (svgMouseY - vbY) / factor;
+    vbW = newW;
+    vbH = newH;
+    
+    updateViewBox();
   }, { passive: false });
 
   mapWrapper.addEventListener('mousedown', (e) => {
     if(e.button !== 0) return;
     isDragging = true;
-    startX = e.clientX - translateX;
-    startY = e.clientY - translateY;
-    svg.style.transition = 'none'; // Disable snapping effect during drag
+    startClientX = e.clientX;
+    startClientY = e.clientY;
+    startVbX = vbX;
+    startVbY = vbY;
     mapWrapper.style.cursor = 'grabbing';
   });
 
   window.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
-    translateX = e.clientX - startX;
-    translateY = e.clientY - startY;
     
-    updateTransform();
+    const dx = e.clientX - startClientX;
+    const dy = e.clientY - startClientY;
+    
+    const rect = svg.getBoundingClientRect();
+    const ratioX = vbW / rect.width;
+    const ratioY = vbH / rect.height;
+    
+    vbX = startVbX - dx * ratioX;
+    vbY = startVbY - dy * ratioY;
+    
+    updateViewBox();
   });
 
   window.addEventListener('mouseup', () => {
     isDragging = false;
-    svg.style.transition = ''; // Re-enable transitions
     mapWrapper.style.cursor = '';
   });
   
   mapWrapper.addEventListener('mouseleave', () => {
     isDragging = false;
-    svg.style.transition = '';
     mapWrapper.style.cursor = '';
   });
 </script>
